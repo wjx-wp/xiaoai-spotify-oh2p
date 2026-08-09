@@ -1,0 +1,9 @@
+* text=auto eol=lf
+* whitespace=trailing-space,space-before-tab
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+*.png binary
+*.jpg binary
+*.webp binary
+LICENSES/** -whitespace
+patches/** -whitespace

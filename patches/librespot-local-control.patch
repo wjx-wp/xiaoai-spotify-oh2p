@@ -1,0 +1,148 @@
+diff --git a/src/main.rs b/src/main.rs
+index fb85803..df6a051 100644
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -39,6 +39,7 @@ use tokio::sync::Semaphore;
+ use url::Url;
+ 
+ mod player_event_handler;
++mod local_control;
+ use player_event_handler::{EventHandler, run_program_on_sink_events};
+ 
+ fn device_id(name: &str) -> String {
+@@ -1897,6 +1898,7 @@ async fn main() {
+     let mut discovery = None;
+     let mut connecting = false;
+     let mut _event_handler: Option<EventHandler> = None;
++    let mut local_control = local_control::LocalControl::from_env();
+ 
+     let mut session = Session::new(setup.session_config.clone(), setup.cache.clone());
+ 
+@@ -2007,6 +2009,34 @@ async fn main() {
+ 
+     loop {
+         tokio::select! {
++            local_command = async {
++                match local_control.as_mut() {
++                    Some(control) => control.recv().await,
++                    None => None,
++                }
++            }, if local_control.is_some() => {
++                match local_command {
++                    Some(command) => {
++                        if let Some(spirc) = spirc.as_ref() {
++                            use local_control::LocalControlCommand;
++                            let result = match command {
++                                LocalControlCommand::Play => spirc.play(),
++                                LocalControlCommand::Pause => spirc.pause(),
++                                LocalControlCommand::Toggle => spirc.play_pause(),
++                                LocalControlCommand::Next => spirc.next(),
++                                LocalControlCommand::Previous => spirc.prev(),
++                                LocalControlCommand::Transfer => spirc.transfer(None),
++                            };
++                            if let Err(why) = result {
++                                warn!("Local control command {command:?} failed: {why}");
++                            }
++                        } else {
++                            warn!("Ignoring local control command while Spotify is disconnected");
++                        }
++                    }
++                    None => local_control = None,
++                }
++            },
+             credentials = async {
+                 match discovery.as_mut() {
+                     Some(d) => d.next().await,
+diff --git a/src/local_control.rs b/src/local_control.rs
+new file mode 100644
+index 0000000..72c388e
+--- /dev/null
++++ b/src/local_control.rs
+@@ -0,0 +1,87 @@
++use log::{info, warn};
++use std::{
++    env, fs, io,
++    os::unix::{fs::PermissionsExt, net::UnixDatagram},
++    path::PathBuf,
++    thread,
++};
++use tokio::sync::mpsc;
++
++#[derive(Clone, Copy, Debug)]
++pub enum LocalControlCommand {
++    Play,
++    Pause,
++    Toggle,
++    Next,
++    Previous,
++    Transfer,
++}
++
++impl LocalControlCommand {
++    fn parse(value: &[u8]) -> Option<Self> {
++        match value.strip_suffix(b"\n").unwrap_or(value) {
++            b"play" => Some(Self::Play),
++            b"pause" => Some(Self::Pause),
++            b"toggle" => Some(Self::Toggle),
++            b"next" => Some(Self::Next),
++            b"previous" => Some(Self::Previous),
++            b"transfer" => Some(Self::Transfer),
++            _ => None,
++        }
++    }
++}
++
++pub struct LocalControl {
++    receiver: mpsc::UnboundedReceiver<LocalControlCommand>,
++}
++
++impl LocalControl {
++    pub fn from_env() -> Option<Self> {
++        let path = env::var_os("LIBRESPOT_CONTROL_SOCKET").map(PathBuf::from)?;
++        match Self::bind(path.clone()) {
++            Ok(control) => {
++                info!("Local control socket listening at {}", path.display());
++                Some(control)
++            }
++            Err(why) => {
++                warn!("Could not create local control socket {}: {why}", path.display());
++                None
++            }
++        }
++    }
++
++    fn bind(path: PathBuf) -> io::Result<Self> {
++        match fs::remove_file(&path) {
++            Ok(()) => {}
++            Err(why) if why.kind() == io::ErrorKind::NotFound => {}
++            Err(why) => return Err(why),
++        }
++        let socket = UnixDatagram::bind(&path)?;
++        fs::set_permissions(&path, fs::Permissions::from_mode(0o600))?;
++        let (sender, receiver) = mpsc::unbounded_channel();
++        thread::Builder::new()
++            .name("librespot-local-control".to_string())
++            .spawn(move || {
++                let mut buffer = [0u8; 64];
++                loop {
++                    match socket.recv(&mut buffer) {
++                        Ok(size) => match LocalControlCommand::parse(&buffer[..size]) {
++                            Some(command) if sender.send(command).is_err() => break,
++                            Some(_) => {}
++                            None => warn!("Ignoring unknown local control command"),
++                        },
++                        Err(why) if why.kind() == io::ErrorKind::Interrupted => continue,
++                        Err(why) => {
++                            warn!("Local control socket failed: {why}");
++                            break;
++                        }
++                    }
++                }
++            })?;
++        Ok(Self { receiver })
++    }
++
++    pub async fn recv(&mut self) -> Option<LocalControlCommand> {
++        self.receiver.recv().await
++    }
++}

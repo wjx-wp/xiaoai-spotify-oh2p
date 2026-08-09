@@ -1,0 +1,8 @@
+-keep class com.jcraft.jsch.** { *; }
+-dontwarn org.bouncycastle.**
+-dontwarn net.i2p.crypto.eddsa.**
+-dontwarn com.sun.jna.**
+-dontwarn org.apache.logging.log4j.**
+-dontwarn org.ietf.jgss.**
+-dontwarn org.newsclub.net.unix.**
+-dontwarn org.slf4j.**

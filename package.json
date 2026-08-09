@@ -1,0 +1,20 @@
+{
+  "name": "xiaoai-spotify-oh2p",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Spotify Connect, voice routing and secure Android handoff for Xiaomi OH2P speakers.",
+  "scripts": {
+    "auth": "node --env-file=.env src/auth.js",
+    "start": "node --env-file=.env src/main.js",
+    "diagnose": "node --env-file=.env src/diagnose.js",
+    "test": "node --test",
+    "public-check": "node scripts/check-public-safety.mjs"
+  },
+  "engines": {
+    "node": ">=20.6"
+  },
+  "dependencies": {
+    "mi-service-lite": "3.1.0"
+  }
+}

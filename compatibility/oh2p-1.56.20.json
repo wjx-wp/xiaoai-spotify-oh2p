@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "model": "OH2P",
+  "firmware": "1.56.20",
+  "status": "end-to-end-validated",
+  "architecture": "armv7-unknown-linux-gnueabihf",
+  "glibcMaximum": "2.25",
+  "nativeFilterInputs": {
+    "/usr/bin/mico_aivs_lab": {
+      "sha256": "b2064cfcecba129a89d4dc01ff7a5acdd1515fe1a6b4ec3db876cd9c88d2a608"
+    },
+    "/usr/lib/libaivs_sdk.so": {
+      "sha256": "64150ecd6fdbddddd0944e177d26c45b9774306bd3ca5c19bce599080844eb9e"
+    }
+  },
+  "notes": [
+    "The native AIVS filter must fail closed when either hash differs.",
+    "This profile does not authorize flashing a rootfs from another device or firmware version."
+  ]
+}

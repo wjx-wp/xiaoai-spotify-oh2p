@@ -1,0 +1,42 @@
+# Credentials and local configuration
+.env
+.env.*
+!.env.example
+.mi.json
+.spotify-token.json
+.secrets/
+*.p12
+*.pfx
+*.jks
+*.keystore
+*.pem
+*.key
+id_rsa*
+known_hosts*
+
+# Device-specific captures, firmware and generated packages
+.cache/
+artifacts/
+upstream/
+*.apk
+*.aab
+*.bin
+*.img
+*.squashfs
+*.tar
+*.tar.gz
+*.zip
+*.plist
+
+# Build outputs
+node_modules/
+**/build/
+**/.gradle/
+target/
+*.log
+
+# Editors and operating systems
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

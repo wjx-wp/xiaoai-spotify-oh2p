@@ -1,0 +1,14 @@
+<resources>
+    <string name="app_name">小爱 Spotify 接管</string>
+    <string name="accessibility_service_name">Spotify 启动预接管</string>
+    <string name="accessibility_service_description">仅在 Spotify 窗口出现时通知家里的小爱音箱接管播放；不读取屏幕内容。</string>
+    <string name="last_status_with_time">%1$s\n%2$s</string>
+    <string name="spotify_authorization_date_unavailable">尚未记录 Spotify 授权日期</string>
+    <string name="spotify_authorization_expired">0 天（已到预计日期）</string>
+    <string name="spotify_authorization_remaining_days">%1$d 天</string>
+    <string name="spotify_authorization_notification_enabled">已开启</string>
+    <string name="spotify_authorization_notification_disabled">未开启，请在系统通知设置中允许</string>
+    <string name="spotify_authorization_pending_verification">\n状态：新授权已加密保存，等待 Spotify 官方只读验证</string>
+    <string name="spotify_authorization_pending_upload">\n状态：官方验证已通过，等待安全下发到音箱</string>
+    <string name="spotify_authorization_expiry_status">授权日：%1$s\n预计到期：%2$s（按 180 天估算）\n剩余：%3$s\n到期提醒：%4$s%5$s</string>
+</resources>

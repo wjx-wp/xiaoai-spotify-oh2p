@@ -1,0 +1,71 @@
+{
+  "schemaVersion": 1,
+  "updated": "2026-08-05",
+  "target": {
+    "model": "OH2P",
+    "architecture": "armv7-unknown-linux-gnueabihf",
+    "glibc": "2.25",
+    "firmwareValidated": "1.56.20",
+    "compatibilityProfile": "compatibility/oh2p-1.56.20.json"
+  },
+  "buildTools": {
+    "rust": "1.96.0",
+    "cargoZigbuild": "0.23.0",
+    "ziglang": "0.15.2"
+  },
+  "upstreams": [
+    {
+      "name": "xiaoai-agent",
+      "url": "https://github.com/stevenjoezhang/xiaoai-agent.git",
+      "commit": "b408562a8524dea2a613e99cb58a2268d8e2ea42",
+      "license": "LGPL-3.0-or-later"
+    },
+    {
+      "name": "open-xiaoai",
+      "url": "https://github.com/idootop/open-xiaoai.git",
+      "commit": "bc3396c64e2a435f354eb5cb12a203981f1fe422",
+      "license": "MIT",
+      "archived": true
+    },
+    {
+      "name": "librespot",
+      "url": "https://github.com/librespot-org/librespot.git",
+      "commit": "d36f9f1907e8cc9d68a93f8ebc6b627b1bf7267d",
+      "tag": "v0.8.0",
+      "license": "MIT"
+    }
+  ],
+  "firmware": {
+    "model": "OH2P",
+    "version": "1.62.2",
+    "filename": "mico_all_616cd9d93_1.62.2.bin",
+    "url": "https://cdn.cnbj1.fds.api.mi-img.com/xiaoqiang/rom/oh2p/mico_all_616cd9d93_1.62.2.bin",
+    "size": 37822040,
+    "md5": "bc81f5b40f3db5e9a9d5943616cd9d93",
+    "sha256": "08c6c0c5e7dfd3de59a7e37b4709ad90ab84e8025c799a642730e97ef53c0eba",
+    "usage": "experimental-reference-and-same-version-only",
+    "endToEndValidated": false
+  },
+  "localPatches": [
+    {
+      "repo": "librespot",
+      "file": "patches/librespot-local-control.patch",
+      "sha256": "c075bec69bd7183ea262885fbe451a86b55743108c5edfb6de1f7e5bc92f1830",
+      "changes": [
+        "root-only Unix datagram control socket",
+        "direct local Spirc play, pause, toggle, next, previous and transfer commands"
+      ]
+    },
+    {
+      "repo": "xiaoai-agent",
+      "file": "patches/xiaoai-agent-coexist.patch",
+      "sha256": "26c71022cbccb984fecbdb5590f55539c28f9a3ff29273540a23acc843e7bf78",
+      "changes": [
+        "coexist mode skips 05-asound-mute-native.patch",
+        "portable GNU/BSD stat handling in squashfs.sh",
+        "SSH login patch retains authenticated ttyS0 instead of an unauthenticated root shell",
+        "extract.sh preserves an ext4 work-directory symlink so device nodes can be unpacked on Windows hosts"
+      ]
+    }
+  ]
+}
