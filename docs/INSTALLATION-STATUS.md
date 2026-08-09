@@ -1,24 +1,66 @@
-# Installation status
+# 安装状态与兼容边界
 
-The runtime, native voice filter, physical-key bridge, Spotify library sync,
-restricted mobile SSH channel and Android OAuth handoff have been validated on
-one OH2P running firmware 1.56.20.
+## 当前结论
 
-The repository does not yet provide a consumer-safe zero-click flashing tool.
-Current host scripts are engineering tools and assume that the operator can:
+运行时、原生语音过滤、实体键桥、Spotify 点赞歌单同步、受限手机 SSH 通道和 Android OAuth/自动接管，已经在一台 `OH2P`、固件 `1.56.20` 的真机上完成端到端验证。
 
-- identify the exact device model and firmware;
-- preserve the active factory slot and create read-only backups;
-- verify SSH host keys through a trusted physical connection;
-- stop when a hash or partition layout differs;
-- recover the original boot slot.
+仓库当前提供的是可复现的工程构建与部署脚本，**还不是面向新音箱的零点击刷机工具**。操作者目前需要能够：
 
-The planned guided installer will use a persistent state machine with explicit
-checkpoints. It can automate device discovery, polling, hash verification,
-backup validation, build/download selection, deployment, health checks and
-rollback. It cannot physically plug or unplug USB/power, approve Android system
-permissions, accept Spotify authorization or make an unknown firmware version
-compatible.
+- 从设备本身确认准确型号、固件和分区布局；
+- 保留可启动的原厂槽，并先完成只读备份与哈希记录；
+- 通过可信物理路径取得并固定 SSH host key；
+- 在型号、哈希、分区或工具输出不符合预期时立即停止；
+- 知道如何把启动槽切回原厂槽。
 
-Until that installer is complete, do not describe this repository as a
-one-click consumer product and do not publish pre-patched Xiaomi firmware.
+如果这些概念还不熟悉，请先不要把工程脚本用在唯一一台音箱上；可以阅读代码、运行本机测试，等待交互式安装器和更多设备验证。
+
+## 兼容性状态
+
+| 型号 | 固件 | 状态 | 说明 |
+| --- | --- | --- | --- |
+| OH2P | 1.56.20 | 端到端真机验证 | 当前唯一受支持基线；native filter 仍要求二进制哈希完全匹配。 |
+| OH2P | 1.62.2 | 仅参考/实验 | 仓库有官方 OTA 元数据和同版本实验工具，但完整方案未在该版本真机验证。 |
+| OH2P | 其它版本 | 不支持 | 必须先新增独立兼容档案、ABI 验证和真机回归。 |
+| LX06、L05C、其它型号 | 不支持 | 不得套用 OH2P 补丁或分区命令。 |
+
+`compatibility/oh2p-1.56.20.json` 记录已验证目标程序哈希。即使界面上显示相同固件版本，只要目标二进制哈希不同，也必须按未知变体处理。
+
+## 已经可以自动化的部分
+
+在已进入可信 SSH、版本完全匹配且备份已完成的前提下，现有脚本可以自动完成：
+
+- 同步锁定的上游提交并应用补丁；
+- 构建 ARMv7 运行时与检查 ELF/glibc/安全属性；
+- 打包并核对禁止进入包内的凭据和个人文件；
+- 部署运行时、受限手机 key 和启动脚本；
+- 安装时生成备份、执行健康检查，并在本次部署失败时回滚；
+- Android 源码测试、lint、正式签名门禁和 APK 构建；
+- Spotify PKCE 授权、只读验证以及手机到音箱的受限下发。
+
+## 仍需用户亲自完成的部分
+
+软件不能代替用户完成以下物理或账号确认：
+
+- 插拔 USB 数据线和电源；
+- 判断设备是否真的进入烧录/恢复模式；
+- 在 Android 系统设置中批准必要权限；
+- 在 Spotify 官方页面登录并同意授权；
+- 为自己的 Spotify Developer 应用创建 Client ID 和登记 redirect URI；
+- 安全保存自己的 Android 签名密钥和设备恢复资料；
+- 对未知硬件或固件承担兼容性决策。
+
+## 计划中的交互式安装器
+
+面向普通用户的安装器应采用可恢复的持久状态机，而不是一串盲目延时命令。预期流程包括：
+
+1. 显示当前步骤和下一项物理动作；
+2. 轮询 USB/ADB/SSH 设备状态，不要求用户猜等待时间；
+3. 读取并显示型号、版本、分区布局和哈希；
+4. 不匹配时 fail closed，并给出可理解的原因；
+5. 先读取备份、验证大小和哈希，再允许任何写操作；
+6. 每个不可逆动作前单独确认准确目标；
+7. 中断后能从已验证检查点恢复，而不是从头猜测；
+8. 部署后测试原生小爱、米家、Spotify、实体键和重启；
+9. 健康检查失败时自动切回安全槽或恢复本次修改。
+
+在这套安装器完成并通过多台设备验证前，不应把本仓库描述成“买一个新音箱，插上线就自动搞定”。当前详细工程流程见[安装与部署](INSTALLATION.md)。
