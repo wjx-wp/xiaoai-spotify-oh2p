@@ -6,6 +6,11 @@ to third-party projects that remain under their upstream licenses. See
 THIRD_PARTY_NOTICES.md and LICENSES/ before redistributing patched sources or
 binaries.
 
+The project also benefits from prior public research by the XiaoAI community.
+See docs/ACKNOWLEDGEMENTS.md for source links, authorship boundaries and
+licenses. Reference or compatibility does not imply endorsement by upstream
+authors.
+
 Xiaomi, XiaoAI and Mi Home are trademarks of Xiaomi and/or its affiliates.
 Spotify is a trademark of Spotify AB. This project is independent and is not
 endorsed by Xiaomi or Spotify.

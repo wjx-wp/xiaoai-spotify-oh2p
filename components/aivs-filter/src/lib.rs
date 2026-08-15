@@ -16,6 +16,11 @@ const CAPABILITY_PROCESS_SLOT: usize = 3;
 const MAX_STRING: usize = 4096;
 const MAX_DIALOG: usize = 127;
 const ACTIVE_TTL: Duration = Duration::from_secs(30);
+// Verified against OH2P firmware 1.56.20's libaivs_sdk.so:
+// AudioPlayer::Play stores optional Common::AudioType at payload + 0x1c,
+// and Common::StringToAudioType("MUSIC") returns enum value 1.
+const AUDIO_PLAYER_TYPE_OFFSET: usize = 0x1c;
+const AUDIO_TYPE_MUSIC: u32 = 1;
 
 static ORIGINAL_REGISTER: AtomicUsize = AtomicUsize::new(0);
 static ORIGINAL_PROCESS: AtomicUsize = AtomicUsize::new(0);
@@ -227,6 +232,15 @@ unsafe fn recognize_text<'a>(payload: *const u8) -> Option<(bool, &'a str)> {
         .map(|text| (final_flag, text))
 }
 
+unsafe fn audio_player_type(payload: *const u8) -> Option<u32> {
+    let value = pointer_at(payload, AUDIO_PLAYER_TYPE_OFFSET);
+    if value.is_null() {
+        None
+    } else {
+        Some(ptr::read_unaligned(value.cast::<u32>()))
+    }
+}
+
 fn is_music_intent(text: &str) -> bool {
     let text = text.trim();
     const EXACT: &[&str] = &[
@@ -242,7 +256,8 @@ fn is_music_intent(text: &str) -> bool {
     }
     const PREFIXES: &[&str] = &[
         "播放", "帮我播放", "请播放", "给我播放", "放一首", "放一个", "放点音乐",
-        "放音乐",
+        "放点歌", "放音乐", "随便播放", "随便放", "来一首", "来点歌", "来点音乐",
+        "听点歌", "听点音乐", "推荐点歌", "推荐一些歌",
     ];
     PREFIXES.iter().any(|prefix| text.starts_with(prefix))
 }
@@ -263,8 +278,41 @@ unsafe fn inspect_instruction(instruction: *mut SharedPtr) -> bool {
     // +76. InstructionHeader::toJson checks the pointer, dereferences it, then
     // serializes the returned std::__cxx11::string.
     let dialog = pointed_string(header, 76).unwrap_or("");
-    log_line(&format!("INSTRUCTION mode={} namespace={namespace} name={name} dialog={dialog}",
-        if mode() == FilterMode::Active { "active" } else { "observe" }));
+    let filter_mode = mode();
+    log_line(&format!(
+        "INSTRUCTION mode={} namespace={namespace} name={name} dialog={dialog}",
+        if filter_mode == FilterMode::Active {
+            "active"
+        } else {
+            "observe"
+        }
+    ));
+
+    // A verified MUSIC payload is the authoritative cloud decision.  Handle
+    // it before taking the classifier state lock so concurrent callbacks can
+    // never make native music fail open merely because the lock is busy.
+    let play_type = if namespace == "AudioPlayer" && name == "Play" {
+        audio_player_type(payload)
+    } else {
+        None
+    };
+    if filter_mode == FilterMode::Active {
+        match play_type {
+            Some(AUDIO_TYPE_MUSIC) => {
+                log_line(&format!(
+                    "DROP namespace=AudioPlayer name=Play audio_type=MUSIC dialog={dialog} source=payload"
+                ));
+                return true;
+            }
+            Some(value) => {
+                log_line(&format!(
+                    "PASS namespace=AudioPlayer name=Play audio_type={value} dialog={dialog}"
+                ));
+                return false;
+            }
+            None => {}
+        }
+    }
 
     let mut state = match filter_state().try_lock() {
         Ok(state) => state,
@@ -291,15 +339,34 @@ unsafe fn inspect_instruction(instruction: *mut SharedPtr) -> bool {
         return false;
     }
 
-    if mode() != FilterMode::Active || !state.matches(dialog) {
+    if filter_mode != FilterMode::Active {
         return false;
     }
-    let drop = (namespace == "SpeechSynthesizer" && name == "Speak")
-        || (namespace == "AudioPlayer" && name == "Play");
-    if drop {
-        log_line(&format!("DROP namespace={namespace} name={name} dialog={dialog}"));
+
+    let classified_dialog = state.matches(dialog);
+    if namespace == "AudioPlayer" && name == "Play" {
+        match play_type {
+            None if classified_dialog => {
+                log_line(&format!(
+                    "DROP namespace=AudioPlayer name=Play audio_type=unknown dialog={dialog} source=classified-dialog"
+                ));
+                return true;
+            }
+            None => {
+                log_line(&format!(
+                    "PASS namespace=AudioPlayer name=Play audio_type=unknown dialog={dialog}"
+                ));
+                return false;
+            }
+            Some(_) => return false,
+        }
     }
-    drop
+
+    if classified_dialog && namespace == "SpeechSynthesizer" && name == "Speak" {
+        log_line(&format!("DROP namespace={namespace} name={name} dialog={dialog}"));
+        return true;
+    }
+    false
 }
 
 unsafe extern "C" fn instruction_process_proxy(
@@ -429,6 +496,10 @@ mod tests {
         assert!(is_music_intent("暂停音乐"));
         assert!(is_music_intent("单曲循环"));
         assert!(is_music_intent("同步点赞音乐"));
+        assert!(is_music_intent("随便播放一首歌曲"));
+        assert!(is_music_intent("来一首歌"));
+        assert!(is_music_intent("听点音乐"));
+        assert!(is_music_intent("推荐点歌"));
         assert!(!is_music_intent("打开客厅的灯"));
         assert!(!is_music_intent("关闭空调"));
         assert!(!is_music_intent("今天天气怎么样"));

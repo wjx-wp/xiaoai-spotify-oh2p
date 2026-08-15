@@ -1,17 +1,22 @@
 # Third-party notices
 
-This repository does not vendor third-party source trees or Xiaomi firmware. Build scripts fetch fixed upstream commits recorded in `resources.lock.json`.
+This repository does not vendor third-party source trees or Xiaomi firmware. Build scripts fetch fixed upstream commits recorded in `resources.lock.json`. See the human-readable [acknowledgements and upstream relationship](docs/ACKNOWLEDGEMENTS.md) for authorship, source links and the distinction between research references, patch targets and runtime dependencies.
 
 | Component | Use | License |
 | --- | --- | --- |
-| librespot | Spotify Connect runtime and local-control patch target | MIT |
-| xiaoai-agent | OH2P research/build tooling and coexist patch target | LGPL-3.0-or-later |
-| open-xiaoai | Historical implementation reference; no source vendored | MIT |
-| mwiede/JSch | Android SSH client dependency | Revised BSD plus bundled JZlib/jBCrypt notices |
-| mi-service-lite | Optional legacy Xiaomi cloud bridge dependency | MIT |
+| [librespot](https://github.com/librespot-org/librespot) | Spotify Connect runtime and local-control patch target | MIT |
+| [xiaoai-agent](https://github.com/stevenjoezhang/xiaoai-agent) | OH2P research/build tooling and coexist patch target | LGPL-3.0-or-later |
+| [open-xiaoai](https://github.com/idootop/open-xiaoai) | Historical implementation reference; no source vendored | MIT |
+| [mwiede/JSch](https://github.com/mwiede/jsch) | Android SSH client dependency | Revised BSD plus bundled JZlib/jBCrypt notices |
+| [mi-service-lite](https://github.com/idootop/mi-service-lite) | Optional legacy Xiaomi cloud bridge dependency | MIT |
 | pako | Transitive Node dependency | MIT AND Zlib |
 | JUnit 4 | Android test dependency only | EPL-1.0 |
 | JSON-java | Android test dependency only | Public Domain |
+
+The following repositories are cited as research or inspiration only and are not build dependencies:
+
+- [idootop/mi-gpt](https://github.com/idootop/mi-gpt), MIT; no source copied or patched here.
+- [birdsofsummer/xiaoai-crack](https://github.com/birdsofsummer/xiaoai-crack), for historical device research. No recognizable license was published when checked, so no source from that repository is copied, modified or redistributed here.
 
 `patches/librespot-local-control.patch` follows the librespot MIT license.
 `patches/xiaoai-agent-coexist.patch` is a derivative patch for xiaoai-agent and follows LGPL-3.0-or-later.

@@ -1,5 +1,7 @@
 # XiaoAI Spotify Handoff for Android
 
+For the end-to-end Chinese guide, start with [installation and trusted pairing](../../docs/INSTALLATION.md) and then read the [daily usage guide](../../docs/USAGE.md). This file focuses on building the Android component from source.
+
 Android companion app for an already-provisioned OH2P speaker. It performs three tasks:
 
 1. securely transfers Spotify playback to the speaker over a host-key-pinned SSH forced command;
