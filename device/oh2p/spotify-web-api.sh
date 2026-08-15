@@ -27,6 +27,10 @@ JSON_PREFIX=
 LIKED_MIRROR_NAME='XiaoAI · Liked Songs'
 LIKED_MIRROR_ID_FILE=${SPOTIFY_LIKED_MIRROR_ID_FILE:-$ROOT/liked-mirror-playlist-id}
 LIKED_MIRROR_SYNC_FILE=${SPOTIFY_LIKED_MIRROR_SYNC_FILE:-$ROOT/liked-mirror-last-sync}
+RADIO_NAME='XiaoAI · Radio'
+RADIO_ID_FILE=${SPOTIFY_RADIO_ID_FILE:-$ROOT/radio-playlist-id}
+PERSONAL_POOL_FILE=${SPOTIFY_PERSONAL_POOL_FILE:-$ROOT/personal-radio-track-uris}
+PERSONAL_POOL_MAX=${SPOTIFY_PERSONAL_POOL_MAX:-100}
 
 ATOMIC_WRITE_TMP=
 ATOMIC_SLOT_TMP=
@@ -157,6 +161,32 @@ atomic_write() {
     ATOMIC_WRITE_TMP=$SECURE_TEMP_RESULT
 
     if ! printf '%s\n' "$atomic_content" >"$ATOMIC_WRITE_TMP" ||
+        ! secure_root_regular_file "$ATOMIC_WRITE_TMP" ||
+        ! "$FSYNC_BIN" "$ATOMIC_WRITE_TMP" ||
+        ! reserve_atomic_target "$atomic_target" ||
+        ! mv -f "$ATOMIC_WRITE_TMP" "$atomic_target"; then
+        rm -f "$ATOMIC_WRITE_TMP"
+        ATOMIC_WRITE_TMP=
+        return 1
+    fi
+    ATOMIC_WRITE_TMP=
+    secure_root_regular_file "$atomic_target" &&
+        "$FSYNC_BIN" "$atomic_target" &&
+        "$FSYNC_BIN" "$atomic_dir"
+}
+
+atomic_install_file() {
+    atomic_source=$1
+    atomic_target=$2
+    path_directory "$atomic_target"
+    atomic_dir=$PATH_DIRECTORY_RESULT
+    atomic_base=${atomic_target##*/}
+    [ -n "$atomic_base" ] || return 1
+    secure_root_directory "$atomic_dir" || return 1
+    make_secure_temp "$atomic_dir/.${atomic_base}.tmp.XXXXXX" || return 1
+    ATOMIC_WRITE_TMP=$SECURE_TEMP_RESULT
+
+    if ! cp "$atomic_source" "$ATOMIC_WRITE_TMP" ||
         ! secure_root_regular_file "$ATOMIC_WRITE_TMP" ||
         ! "$FSYNC_BIN" "$ATOMIC_WRITE_TMP" ||
         ! reserve_atomic_target "$atomic_target" ||
@@ -706,6 +736,7 @@ liked_mirror_id() {
 play_liked() {
     if [ -s "$LIKED_MIRROR_SYNC_FILE" ] && playlist_id=$(liked_mirror_id); then
         start_uri "spotify:playlist:$playlist_id" playlist || return 1
+        apply_repeat context || log_message "LIKED_REPEAT_ENABLE_FAILED playlist_id=$playlist_id"
         log_message "PLAY type=liked-mirror playlist_id=$playlist_id"
         printf 'PLAYING\tliked-mirror\t%s\n' "$playlist_id"
         return 0
@@ -779,6 +810,7 @@ play_my_playlist() {
     matched_uri=$(printf '%s\n' "$match" | sed -n '1p')
     matched_name=$(printf '%s\n' "$match" | sed -n '2p')
     start_uri "$matched_uri" playlist || return 1
+    apply_repeat context || log_message "PLAYLIST_REPEAT_ENABLE_FAILED uri=$matched_uri"
     log_message "PLAY type=my-playlist query=$query result=$matched_name"
     printf 'PLAYING\tmy-playlist\t%s\n' "$matched_name"
 }
@@ -838,6 +870,160 @@ ensure_liked_mirror_id() {
     printf '%s\n' "$playlist_id"
 }
 
+radio_id() {
+    secure_root_regular_file "$RADIO_ID_FILE" && [ -s "$RADIO_ID_FILE" ] || return 1
+    playlist_id=$(cat "$RADIO_ID_FILE" 2>/dev/null)
+    valid_playlist_id "$playlist_id" || return 1
+    printf '%s\n' "$playlist_id"
+}
+
+find_radio_id() {
+    result=$(find_my_playlist "$RADIO_NAME") || return 1
+    uri=$(printf '%s\n' "$result" | sed -n '1p')
+    name=$(printf '%s\n' "$result" | sed -n '2p')
+    [ "$name" = "$RADIO_NAME" ] || return 1
+    playlist_id=${uri#spotify:playlist:}
+    valid_playlist_id "$playlist_id" || return 1
+    printf '%s\n' "$playlist_id"
+}
+
+ensure_radio_id() {
+    if playlist_id=$(radio_id); then
+        printf '%s\n' "$playlist_id"
+        return 0
+    fi
+    if playlist_id=$(find_radio_id); then
+        atomic_write "$RADIO_ID_FILE" "$playlist_id" || return 1
+        printf '%s\n' "$playlist_id"
+        return 0
+    fi
+    body='{"name":"XiaoAI · Radio","public":false,"description":"Personal radio queue managed by XiaoAI Music."}'
+    api_request POST "$API_BASE/me/playlists" -H 'Content-Type: application/json' --data "$body" || return 1
+    playlist_id=$(json_value "$API_RESPONSE" '@.id')
+    rm -f "$API_RESPONSE"
+    valid_playlist_id "$playlist_id" || {
+        printf '%s\n' 'Spotify 创建 Radio 歌单后没有返回有效 ID' >&2
+        return 1
+    }
+    atomic_write "$RADIO_ID_FILE" "$playlist_id" || return 1
+    printf '%s\n' "$playlist_id"
+}
+
+refresh_personal_pool() {
+    liked_file=$1
+    raw_file=$(mktemp /tmp/xiaoaimusic-personal-raw.XXXXXX) || return 1
+    pool_file=$(mktemp /tmp/xiaoaimusic-personal-pool.XXXXXX) || {
+        rm -f "$raw_file"
+        return 1
+    }
+    : >"$raw_file"
+
+    API_SILENT_ERRORS=1
+    if api_request GET "$API_BASE/me/top/tracks" --get \
+            --data 'time_range=medium_term' --data 'limit=50'; then
+        response=$API_RESPONSE
+        json_values "$response" '@.items[*].uri' >>"$raw_file"
+        rm -f "$response"
+    fi
+    API_SILENT_ERRORS=0
+    cat "$liked_file" >>"$raw_file"
+
+    case "$PERSONAL_POOL_MAX" in *[!0-9]*|'') PERSONAL_POOL_MAX=100 ;; esac
+    [ "$PERSONAL_POOL_MAX" -ge 2 ] || PERSONAL_POOL_MAX=2
+    [ "$PERSONAL_POOL_MAX" -le 100 ] || PERSONAL_POOL_MAX=100
+    awk -v max="$PERSONAL_POOL_MAX" '
+        /^spotify:track:[A-Za-z0-9]+$/ && !seen[$0]++ {
+            print
+            count++
+            if (count >= max) exit
+        }
+    ' "$raw_file" >"$pool_file"
+    rm -f "$raw_file"
+    if [ ! -s "$pool_file" ] || ! atomic_install_file "$pool_file" "$PERSONAL_POOL_FILE"; then
+        rm -f "$pool_file"
+        return 1
+    fi
+    pool_count=$(wc -l <"$pool_file" | tr -d ' ')
+    rm -f "$pool_file"
+    log_message "SYNC type=personal-pool count=$pool_count"
+}
+
+pick_personal_seed() {
+    secure_root_regular_file "$PERSONAL_POOL_FILE" && [ -s "$PERSONAL_POOL_FILE" ] || return 1
+    count=$(wc -l <"$PERSONAL_POOL_FILE" | tr -d ' ')
+    case "$count" in *[!0-9]*|'') return 1 ;; esac
+    [ "$count" -gt 0 ] || return 1
+    now=$(date +%s)
+    line=$((now % count + 1))
+    track_uri=$(sed -n "${line}p" "$PERSONAL_POOL_FILE")
+    case "$track_uri" in spotify:track:*) printf '%s\n' "$track_uri" ;; *) return 1 ;; esac
+}
+
+build_radio_body() {
+    seed_uri=$1
+    output=$2
+    uri_file=$(mktemp /tmp/xiaoaimusic-radio-uris.XXXXXX) || return 1
+    unique_file=$(mktemp /tmp/xiaoaimusic-radio-unique.XXXXXX) || {
+        rm -f "$uri_file"
+        return 1
+    }
+    printf '%s\n' "$seed_uri" >"$uri_file"
+    if secure_root_regular_file "$PERSONAL_POOL_FILE"; then
+        cat "$PERSONAL_POOL_FILE" >>"$uri_file"
+    fi
+    awk '
+        /^spotify:track:[A-Za-z0-9]+$/ && !seen[$0]++ {
+            print
+            count++
+            if (count >= 100) exit
+        }
+    ' "$uri_file" >"$unique_file"
+    rm -f "$uri_file"
+    write_uri_batch_body "$unique_file" 1 "$output"
+    radio_count=$(wc -l <"$unique_file" | tr -d ' ')
+    rm -f "$unique_file"
+    [ "$radio_count" -ge 1 ]
+}
+
+play_track_radio() {
+    track_uri=$1
+    query=$2
+    track_name=$3
+    case "$track_uri" in
+        spotify:track:*) ;;
+        *) printf '%s\n' 'Spotify 返回了无效的单曲 URI' >&2; return 1 ;;
+    esac
+
+    playlist_id=$(ensure_radio_id) || return 1
+    body_file=$(mktemp /tmp/xiaoaimusic-radio-body.XXXXXX) || return 1
+    build_radio_body "$track_uri" "$body_file" || {
+        rm -f "$body_file"
+        return 1
+    }
+    api_request PUT "$API_BASE/playlists/$playlist_id/items" \
+        -H 'Content-Type: application/json' --data-binary "@$body_file" || {
+            rm -f "$body_file"
+            return 1
+        }
+    rm -f "$body_file" "$API_RESPONSE"
+
+    start_uri "spotify:playlist:$playlist_id" playlist || return 1
+    apply_shuffle true || log_message "RADIO_SHUFFLE_ENABLE_FAILED playlist_id=$playlist_id"
+    apply_repeat context || log_message "RADIO_REPEAT_ENABLE_FAILED playlist_id=$playlist_id"
+    log_message "PLAY type=radio query=$query result=$track_name playlist_id=$playlist_id"
+    printf 'PLAYING\tradio\t%s\n' "$track_name"
+}
+
+play_for_me() {
+    if track_uri=$(pick_personal_seed); then
+        play_track_radio "$track_uri" personal 'XiaoAI Personal Mix'
+        return $?
+    fi
+    play_liked || return 1
+    apply_shuffle true || return 1
+    apply_repeat context || return 1
+}
+
 write_uri_batch_body() {
     source_file=$1
     start_line=$2
@@ -873,6 +1059,10 @@ sync_liked_mirror() {
         start_line=$((start_line + 100))
         method=POST
     done
+    refresh_personal_pool "$uri_file" || {
+        rm -f "$uri_file"
+        return 1
+    }
     rm -f "$uri_file"
     sync_completed_at=$(date +%s)
     atomic_write "$LIKED_MIRROR_SYNC_FILE" "$sync_completed_at" || return 1
@@ -902,9 +1092,14 @@ search_and_play() {
         return 1
     }
 
-    start_uri "$uri" "$item_type" || return 1
-    log_message "PLAY type=$item_type query=$query result=$name"
-    printf 'PLAYING\t%s\t%s\n' "$item_type" "$name"
+    if [ "$item_type" = track ]; then
+        play_track_radio "$uri" "$query" "$name"
+    else
+        start_uri "$uri" "$item_type" || return 1
+        apply_repeat context || log_message "CONTEXT_REPEAT_ENABLE_FAILED type=$item_type"
+        log_message "PLAY type=$item_type query=$query result=$name"
+        printf 'PLAYING\t%s\t%s\n' "$item_type" "$name"
+    fi
 }
 
 auto_search_and_play() {
@@ -920,18 +1115,18 @@ auto_search_and_play() {
 
     if [ -n "$artist_uri" ] && [ "$artist_name" = "$query" ]; then
         start_uri "$artist_uri" artist || return 1
+        apply_repeat context || log_message 'CONTEXT_REPEAT_ENABLE_FAILED type=artist'
         log_message "PLAY type=artist query=$query result=$artist_name"
         printf 'PLAYING\tartist\t%s\n' "$artist_name"
         return 0
     fi
     if [ -n "$track_uri" ]; then
-        start_uri "$track_uri" track || return 1
-        log_message "PLAY type=track query=$query result=$track_name"
-        printf 'PLAYING\ttrack\t%s\n' "$track_name"
-        return 0
+        play_track_radio "$track_uri" "$query" "$track_name"
+        return $?
     fi
     if [ -n "$artist_uri" ]; then
         start_uri "$artist_uri" artist || return 1
+        apply_repeat context || log_message 'CONTEXT_REPEAT_ENABLE_FAILED type=artist'
         log_message "PLAY type=artist query=$query result=$artist_name"
         printf 'PLAYING\tartist\t%s\n' "$artist_name"
         return 0
@@ -1004,6 +1199,14 @@ toggle_playback() {
     printf 'TRANSPORT\t%s\n' "$action"
 }
 
+apply_shuffle() {
+    state=$1
+    case "$state" in true|false) ;; *) return 1 ;; esac
+    device_id=$(target_device_id) || return 1
+    api_request PUT "$API_BASE/me/player/shuffle?state=$state&device_id=$device_id" --data '' || return 1
+    rm -f "$API_RESPONSE"
+}
+
 set_shuffle() {
     state=$1
     case "$state" in
@@ -1011,14 +1214,12 @@ set_shuffle() {
         off|false) state=false ;;
         *) printf '%s\n' '随机播放参数必须是 on 或 off' >&2; return 1 ;;
     esac
-    device_id=$(target_device_id) || return 1
-    api_request PUT "$API_BASE/me/player/shuffle?state=$state&device_id=$device_id" --data '' || return 1
-    rm -f "$API_RESPONSE"
+    apply_shuffle "$state" || return 1
     log_message "SHUFFLE state=$state"
     printf 'SHUFFLE\t%s\n' "$state"
 }
 
-set_repeat() {
+apply_repeat() {
     state=$1
     case "$state" in
         off|track|context) ;;
@@ -1027,6 +1228,11 @@ set_repeat() {
     device_id=$(target_device_id) || return 1
     api_request PUT "$API_BASE/me/player/repeat?state=$state&device_id=$device_id" --data '' || return 1
     rm -f "$API_RESPONSE"
+}
+
+set_repeat() {
+    state=$1
+    apply_repeat "$state" || return 1
     log_message "REPEAT state=$state"
     printf 'REPEAT\t%s\n' "$state"
 }
@@ -1045,6 +1251,10 @@ command=${1:-}
 load_config
 
 case "$command" in
+    play-for-me)
+        [ "$#" -eq 1 ] || fail '用法：spotify-web-api.sh play-for-me'
+        play_for_me
+        ;;
     play-auto)
         [ "$#" -ge 2 ] || fail '用法：spotify-web-api.sh play-auto 查询词'
         shift
@@ -1092,6 +1302,6 @@ case "$command" in
         healthcheck
         ;;
     *)
-        fail '用法：spotify-web-api.sh {play-auto|play|play-liked|play-liked-shuffle|sync-liked|play-my-playlist|resume|pause|toggle|next|previous|shuffle|repeat|health}'
+        fail '用法：spotify-web-api.sh {play-for-me|play-auto|play|play-liked|play-liked-shuffle|sync-liked|play-my-playlist|resume|pause|toggle|next|previous|shuffle|repeat|health}'
         ;;
 esac

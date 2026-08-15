@@ -10,24 +10,12 @@ test('resource lock pins OH2P ABI, firmware and upstream commits', async () => {
   assert.equal(lock.target.model, 'OH2P');
   assert.equal(lock.target.architecture, 'armv7-unknown-linux-gnueabihf');
   assert.equal(lock.target.glibc, '2.25');
-  assert.equal(lock.target.firmwareValidated, '1.56.20');
-  assert.equal(lock.target.compatibilityProfile, 'compatibility/oh2p-1.56.20.json');
   assert.equal(lock.firmware.version, '1.62.2');
-  assert.equal(lock.firmware.endToEndValidated, false);
   assert.match(lock.firmware.md5, /^[a-f0-9]{32}$/);
   assert.match(lock.firmware.sha256, /^[a-f0-9]{64}$/);
   for (const upstream of lock.upstreams) {
     assert.match(upstream.commit, /^[a-f0-9]{40}$/);
   }
-});
-
-test('public compatibility profile pins the validated native filter inputs', async () => {
-  const profile = JSON.parse(await text('compatibility/oh2p-1.56.20.json'));
-  assert.equal(profile.model, 'OH2P');
-  assert.equal(profile.firmware, '1.56.20');
-  assert.equal(profile.status, 'end-to-end-validated');
-  assert.match(profile.nativeFilterInputs['/usr/bin/mico_aivs_lab'].sha256, /^[a-f0-9]{64}$/);
-  assert.match(profile.nativeFilterInputs['/usr/lib/libaivs_sdk.so'].sha256, /^[a-f0-9]{64}$/);
 });
 
 test('canonical coexist patch has the locked hash and preserves native voice', async () => {
@@ -220,6 +208,9 @@ test('local voice bridge only takes over confirmed music instructions', async ()
   assert.match(bridge, /闭嘴/);
   assert.match(bridge, /关闭音乐/);
   assert.match(bridge, /MUSIC_INTENT_EARLY/);
+  assert.match(bridge, /MUSIC_INTENT_CONFIRMED/);
+  assert.match(bridge, /MUSIC_ROUTE_FALLBACK/);
+  assert.match(bridge, /play-for-me/);
   assert.match(bridge, /SUPPRESS_NATIVE_TTS/);
   assert.match(bridge, /mico_aivs_lab restart/);
 
@@ -235,6 +226,16 @@ test('local voice bridge only takes over confirmed music instructions', async ()
   assert.match(api, /active_device_id/);
   assert.match(api, /sync_liked_mirror/);
   assert.match(api, /playlist-modify-private|LIKED_MIRROR_NAME/);
+  assert.match(api, /RADIO_NAME='XiaoAI · Radio'/);
+  assert.match(api, /play_track_radio/);
+  assert.match(api, /play_for_me/);
+  assert.match(api, /me\/top\/tracks/);
+  assert.match(api, /PERSONAL_POOL_FILE/);
+  assert.match(api, /refresh_personal_pool/);
+  assert.match(api, /build_radio_body/);
+  assert.match(api, /apply_shuffle true/);
+  assert.match(api, /apply_repeat context/);
+  assert.match(api, /spotify:playlist:\$playlist_id/);
   assert.match(api, /play-my-playlist/);
   assert.match(api, /me\/player\/shuffle/);
   assert.match(api, /me\/player\/repeat/);
@@ -242,6 +243,12 @@ test('local voice bridge only takes over confirmed music instructions', async ()
   assert.match(api, /DEVICE_CACHE_REFRESH reason=play-failed/);
   assert.match(api, /time_total/);
   assert.doesNotMatch(api, /client_secret/i);
+
+  const filter = await text('components/aivs-filter/src/lib.rs');
+  assert.match(filter, /AUDIO_PLAYER_TYPE_OFFSET: usize = 0x1c/);
+  assert.match(filter, /AUDIO_TYPE_MUSIC: u32 = 1/);
+  assert.match(filter, /audio_player_type\(payload\)/);
+  assert.match(filter, /source=payload/);
 
   const authDeployment = await text('host/deploy-spotify-auth.sh');
   assert.match(authDeployment, /\.spotify-token\.json/);

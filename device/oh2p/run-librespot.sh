@@ -11,7 +11,10 @@ PID_FILE=/tmp/xiaoaimusic-supervisor.pid
 LOG_FILE=/tmp/xiaoaimusic-librespot.log
 
 if [ -r /usr/share/mico/version ]; then
-    MODEL=$(sed -n "s/.*HARDWARE[[:space:]]*=[[:space:]]*'\([^']*\)'.*/\1/p" /usr/share/mico/version | head -n 1)
+    MODEL=$(sed -n \
+        -e "s/^[[:space:]]*option[[:space:]][[:space:]]*HARDWARE[[:space:]][[:space:]]*'\([^']*\)'.*/\1/p" \
+        -e "s/.*HARDWARE[[:space:]]*=[[:space:]]*'\([^']*\)'.*/\1/p" \
+        /usr/share/mico/version | head -n 1)
     if [ -n "$MODEL" ] && [ "$MODEL" != "OH2P" ]; then
         echo "拒绝启动：检测到型号 $MODEL，不是 OH2P" >&2
         exit 2

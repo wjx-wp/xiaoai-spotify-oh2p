@@ -141,6 +141,14 @@ route_music_query() {
     query=
 
     case "$text" in
+        随便播放*|随便放*|来一首*|来点歌*|来点音乐*|放点歌*|听点歌*|听点音乐*|推荐点歌*|推荐一些歌*)
+            abort_native_dialog
+            run_api_action play-for-me
+            return $?
+            ;;
+    esac
+
+    case "$text" in
         帮我播放*) query=${text#帮我播放} ;;
         请播放*) query=${text#请播放} ;;
         给我播放*) query=${text#给我播放} ;;
@@ -185,7 +193,7 @@ route_music_query() {
 
     case "$query" in
         ''|音乐|歌曲)
-            run_api_action resume
+            run_api_action play-for-me
             ;;
         *)
             if [ "$item_type" = auto ]; then
@@ -237,17 +245,33 @@ process_instruction() {
     if [ "$namespace" = AudioPlayer ] && [ "$name" = Play ]; then
         audio_type=$(json_line_value "$line" '@.payload.audio_type')
         [ "$audio_type" = MUSIC ] || return 0
-        [ -n "$dialog" ] && [ "$dialog" = "$PENDING_DIALOG" ] || return 0
-        if [ "$dialog" = "$LAST_HANDLED_DIALOG" ]; then
+        # 原生云端已经最终判定为音乐。无论前面的中文词典是否认识，
+        # 都先阻止小米音源，再将同轮文本回补给 Spotify。
+        stop_native_music
+        if [ -n "$dialog" ] && [ "$dialog" = "$LAST_HANDLED_DIALOG" ]; then
             log_message "SUPPRESS_NATIVE_MUSIC dialog=$dialog"
-            stop_native_music
             return 0
         fi
         LAST_HANDLED_DIALOG=$dialog
-        log_message "MUSIC_INTENT dialog=$dialog text=$PENDING_TEXT"
-        route_music_query "$PENDING_TEXT"
+        if [ -n "$dialog" ] && [ "$dialog" = "$PENDING_DIALOG" ] && [ -n "$PENDING_TEXT" ]; then
+            music_text=$PENDING_TEXT
+        else
+            music_text=
+        fi
+        log_message "MUSIC_INTENT_CONFIRMED dialog=$dialog text=$music_text"
+        if [ -n "$music_text" ]; then
+            route_music_query "$music_text"
+        else
+            abort_native_dialog
+            run_api_action play-for-me
+        fi
         music_status=$?
-        [ "$music_status" -eq 0 ] || log_message "IGNORED dialog=$dialog text=$PENDING_TEXT status=$music_status"
+        if [ "$music_status" -ne 0 ]; then
+            log_message "MUSIC_ROUTE_FALLBACK dialog=$dialog text=$music_text status=$music_status"
+            abort_native_dialog
+            run_api_action play-for-me || \
+                log_message "MUSIC_ROUTE_FAILED dialog=$dialog text=$music_text"
+        fi
     fi
 }
 

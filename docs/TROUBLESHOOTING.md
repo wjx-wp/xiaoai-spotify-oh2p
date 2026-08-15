@@ -33,12 +33,12 @@ tail -n 80 /tmp/xiaoaimusic-keybridge.log
 
 ## 仍然听到“开通音乐会员”或试听版
 
-这句话来自小米原生音乐链路，不是 Spotify Premium 的会员判断。通常表示语音没有命中项目路由，或原生 AIVS 过滤器没有工作。
+这句话来自小米原生音乐链路，不是 Spotify Premium 的会员判断。当前版本会在小米云返回 `audio_type=MUSIC` 时强制拦截；仍能听到原生歌曲通常表示 AIVS 过滤器没有工作。会员提示语可能先于 MUSIC 指令出现，但后续原生歌曲不应播放。
 
-1. 先用确定性较高的说法测试：`小爱同学，播放歌手周杰伦`。不要用本项目未支持的“最近播放”“常听歌曲”“当前队列”等说法。
+1. 分别测试确定性说法 `小爱同学，播放歌手周杰伦` 和兜底说法 `小爱同学，随便播放一首歌曲`。
 2. 在健康输出中确认 `voice-bridge.sh` 正在运行。
 3. 在 `native filters` 中确认 `mico_aivs_lab` 的内存映射包含 `libxiaoaimusic_aivs_filter.so`。
-4. 查看语音桥日志。应看到最终 ASR、`MUSIC_INTENT_EARLY` 和对应的 `OK action=play...`；如果完全没有 ASR，检查小爱网络和原生语音服务。
+4. 查看语音桥日志。提前命中应看到 `MUSIC_INTENT_EARLY`；云端兜底应看到 `MUSIC_INTENT_CONFIRMED`，无法精确解析时还会看到 `MUSIC_ROUTE_FALLBACK`。随后必须有对应的 `OK action=...`。
 5. 如果出现 `FAILED action=...`，继续检查 Spotify 授权、网络和设备是否在线。
 
 已验证固件突然丢失过滤器时，优先重启音箱让已安装的开机流程恢复。仍不恢复才在可信 root 会话运行 `/data/xiaoaimusic/activate-native-filters.sh`；该脚本会核对固定二进制哈希，任何不匹配都必须停止排错，不得改掉哈希门禁强行加载。
@@ -68,6 +68,21 @@ tail -n 80 /tmp/xiaoaimusic-keybridge.log
 - 在 `/tmp/xiaoaimusic-spotify-api.log` 中查看每个 `API` 记录的 `seconds=` 和 `status=`；耗时发生在 Spotify 网络请求时，不要反复重启语音服务。
 - 音箱会把 Spotify Connect 设备 ID 持久缓存到 `/data/xiaoaimusic/spotify-device-id`。播放失败时程序会自动删除缓存、重新发现设备并重试一次；无需手工定期清缓存。
 - `SPOTIFY_API_READY` 缺失或提示找不到配置的设备名时，确认 librespot 正在运行，并确认 `device.env` 与 `spotify-web.env` 的 `SPOTIFY_DEVICE_NAME` 完全一致。
+
+## 一首歌播放完就停止
+
+不要只检查 librespot 的 `--autoplay` 参数：Spotify Connect 不保证把手机端 Autoplay 状态同步给第三方接收端。当前版本通过私有 Radio 歌单、随机和列表循环保证续播。
+
+```sh
+wc -l /data/xiaoaimusic/personal-radio-track-uris
+tail -n 40 /tmp/xiaoaimusic-spotify-api.log
+tail -n 40 /tmp/xiaoaimusic-librespot.log
+```
+
+- 个人池正常应有 2 至 100 行，常规账号通常为 100。
+- 播放请求后应看到 `/playlists/.../items`、`/me/player/play`、`/me/player/shuffle` 和 `/me/player/repeat` 均为 `2xx`。
+- 若个人池缺失，说 `小爱同学，同步点赞音乐`，等待 `SYNC type=personal-pool` 成功后重试。
+- `XiaoAI · Radio` 和 `XiaoAI · Liked Songs` 都是程序维护的私有歌单，不要手工删除或改名。
 
 ## 中央播放键有延迟或没有反应
 

@@ -13,7 +13,7 @@ flowchart LR
     LS --> ALSA["OH2P ALSA 扬声器"]
 
     XA --> NF["AIVS 原生音乐过滤器"]
-    NF -->|"仅匹配的音乐 dialog"| DROP["抑制原生 TTS / QQ 音乐播放"]
+    NF -->|"词典提前命中或 audio_type=MUSIC"| DROP["抑制原生 TTS / QQ 音乐播放"]
     NF -->|"米家、红外、天气、闹钟等"| STOCK["继续交给原生小爱"]
 
     KEY["音箱实体键"] --> KB["keybridge / 本地 Spirc"]
@@ -29,9 +29,9 @@ flowchart LR
 
 ### 语音路由
 
-原生 `mico_aivs_lab` 仍负责唤醒词、录音、识别以及小米生态能力。`voice-bridge.sh` 读取最终 ASR 指令，使用明确的中文语法路由音乐请求；它不会把全部语音转交给第三方服务。
+原生 `mico_aivs_lab` 仍负责唤醒词、录音、识别以及小米生态能力。`voice-bridge.sh` 读取最终 ASR 指令：明确中文语法用于提前、精确地路由；如果本地词典没有认识一句话，但小米云随后返回 `AudioPlayer.Play` 且 `audio_type=MUSIC`，同一轮文本仍会回补到 Spotify 的个人电台。它不会把全部语音转交给第三方服务。
 
-当同一 `dialog_id` 被识别为 Spotify 音乐请求时，进程内 AIVS 过滤器只抑制该轮对话后续的原生音乐和相关 TTS，避免 QQ 音乐试听版或会员提示抢占扬声器。未匹配的米家、红外、天气、闹钟等指令继续交给原生处理。
+进程内 AIVS 过滤器有两层判定：词典提前确认的音乐 `dialog_id` 会抑制相关原生 TTS；任何经 SDK payload 验证为 `audio_type=MUSIC` 的播放指令都会被同步丢弃，避免 QQ 音乐、试听版或会员音源抢占扬声器。`ALERT_SOUND` 等非音乐类型明确放行，因此米家、红外、天气、闹钟等能力继续交给原生处理。
 
 这里采用双重保护：过滤器负责尽早拦截，`stop-native-music.sh` 负责清理已经启动的原生播放器。过滤器二进制在加载前还会核对型号、固件和目标程序哈希；不匹配时必须拒绝加载，而不是猜测 ABI。
 
@@ -39,7 +39,7 @@ flowchart LR
 
 `librespot` 作为 Spotify Connect 接收端直接运行在 OH2P 上，通过设备 ALSA 输出音频，因此播放期间不需要电脑常开。
 
-搜索、个人歌单、点赞音乐镜像、随机和循环等动作由 `spotify-web-api.sh` 处理。暂停、继续、上一首、下一首等高频动作优先通过本地 Spirc 控制 socket 发送，失败才退回 Spotify Web API，以减少延迟。
+搜索、个人歌单、点赞音乐镜像、个人 Radio、随机和循环等动作由 `spotify-web-api.sh` 处理。暂停、继续、上一首、下一首等高频动作优先通过本地 Spirc 控制 socket 发送，失败才退回 Spotify Web API，以减少延迟。
 
 ### 实体按键
 
@@ -48,6 +48,8 @@ flowchart LR
 ### 点赞音乐镜像
 
 Spotify 的 Liked Songs 不是普通歌单上下文。设备端分页读取用户收藏并同步到用户自己的私有镜像歌单，然后播放该歌单。默认每日检查一次；手机上新增或取消点赞会在下一次成功同步后反映到音箱。
+
+同一次同步还会合并 Spotify 中期常听歌曲和点赞歌曲，去重后生成最多 100 首的本地个人池。播放单曲或“随便来一首”时，设备把目标种子和个人池写入用户自己的私有 `XiaoAI · Radio` 歌单，启动随机播放并设置列表循环。这个确定性队列不依赖 Spotify 客户端是否把 Autoplay 状态同步给 librespot。
 
 ## Android 端数据流
 

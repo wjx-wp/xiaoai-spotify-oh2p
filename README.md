@@ -23,14 +23,15 @@ librespot 直接运行在音箱内；语音和实体键可以控制 Spotify；An
 ## 已实现
 
 - Spotify Connect 接收端直接运行在 OH2P 上，最高配置为 320 kbps，电脑无需常开。
-- “播放歌手 / 歌曲 / 专辑 / 我的歌单 / 点赞音乐”等中文语音请求路由到 Spotify。
+- “播放歌手 / 歌曲 / 专辑 / 我的歌单 / 点赞音乐”等中文语音请求路由到 Spotify；小米云最终确认的其他音乐请求也会兜底接管。
 - 原生小爱继续处理米家、红外、天气、闹钟等非音乐能力。
-- 对已接管的音乐对话抑制原生 QQ 音乐、试听版和会员提示，避免双播放器抢占。
+- AIVS 过滤器按原生 `audio_type=MUSIC` 最终判定抑制 QQ 音乐播放；非音乐提示音、米家、红外、天气和闹钟继续保留。
 - 播放/暂停、上一首、下一首等实体键走本地 Spirc 控制，延迟低。
 - Android 应用在 Wi-Fi 和音频路由条件满足时，把手机 Spotify 会话接管到音箱。
 - Spotify OAuth 使用 Authorization Code + PKCE，不需要 Client Secret；授权和重新授权都可在手机完成。
 - 手机 SSH 私钥由 Android Keystore 生成且不可导出；音箱只授予三个 forced commands，不给手机 root shell。
 - Liked Songs 通过用户自己的私有镜像歌单每日同步；手机上的点赞变化会在下一次成功同步后反映到音箱。
+- 每日同步同时生成最多 100 首的个人音乐池；单曲和泛化请求使用私有 `XiaoAI · Radio` 歌单随机、列表循环，避免单曲结束后停播。
 
 详细命令与已知限制见[日常使用指南](docs/USAGE.md)。
 
